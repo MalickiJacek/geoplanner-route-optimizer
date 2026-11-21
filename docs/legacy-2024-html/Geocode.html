@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.6.0/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-search/dist/leaflet-search.min.css"/>
+    <script src="https://unpkg.com/leaflet@1.6.0/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-search/dist/leaflet-search.min.js"></script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"
+          integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <title>GeoCode</title>
+    <link rel="stylesheet" href="style/style.css">
+</head>
+<body>
+<nav class="navbar navbar-dark bg-dark">
+    <a class="navbar-brand" href="JMPage.html">
+        <img src="zdje.png" width="30" height="30" class="d-inline-block align-top" alt="">
+        253484 JM page
+    </a>
+    <form class="form-inline">
+        <a class="navbar-brand" href="Geocode.html">Geocode</a>
+        <a class="navbar-brand" href="TSP.html">TSP</a>
+        <a class="navbar-brand" href="VRP.html">VRP</a>
+    </form>
+</nav>
+<!-- First section -->
+<div class="bg-success p-2 text-white"><h1>This page is meant to Geocode</h1></div>
+<p>Here you import table with two columns: first one contains adresses while second has unique ID of each point</p>
+<input type="file" id="fileInput" accept=".txt" style="display: none;">
+<!-- import txt -->
+<button type="button" class="btn btn-primary" onclick="document.getElementById('fileInput').click()">Import File
+</button>
+<!-- dataTable -->
+<div class="scrollable-table" id="dataTableContainer">
+    <table class="table" border="1" id="dataTable">
+        <tr>
+            <th></th>
+            <th>Address</th>
+            <th>JobID</th>
+        </tr>
+    </table>
+</div>
+<!-- Paragraph to display import information -->
+<p id="importInfo" class="darkgreen"></p>
+<!-- Geocode button -->
+<button type="button" class="btn btn-primary" onclick="geocode()">Geocode</button>
+
+<!-- Second section -->
+<div class="bg-success p-2 text-white"><h1> MAP</h1></div>
+
+<p class="darkgreen">Map shows all points basing on given adresses</p>
+<!-- MAP -->
+<div id="map"></div>
+<script>
+    var mapOptions = {
+        center: [56.0665736, -3.799416],
+        zoom: 8
+    }
+    var map = new L.map('map', mapOptions);
+
+    var layer = new L.TileLayer('http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+    map.addLayer(layer);
+</script>
+<!-- Third section -->
+<div class="bg-success p-2 text-white"><h1> Overwritten table</h1></div>
+<p>Table with additional columns with longitude and latitude of each point and with information about eventual errors </p>
+<!-- Finaltable -->
+<div class="scrollable-table" id="finalTableContainer"></div>
+<!-- Download button -->
+<button type="button" class="btn btn-primary" onclick="downloadData()">Download</button>
+<!-- bootstrap script -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+        crossorigin="anonymous"></script>
+<!-- Uploading script -->
+<script>
+    document.getElementById('fileInput').addEventListener('change', function () {
+        var fr = new FileReader();
+        fr.onload = function () {
+            var lines = fr.result.split('\n');
+            var dataTable = document.getElementById('dataTable');
+            var importedRows = 0;
+            for (var i = 0; i < lines.length; i++) {
+                var parts = lines[i].trim().split('\t');
+                if (parts.length >= 2) {
+                    var row1 = dataTable.insertRow();
+                    row1.insertCell(0).textContent = i + 1;
+                    row1.insertCell(1).textContent = parts[0];
+                    row1.insertCell(2).textContent = parts[1];
+                    importedRows++;
+                }
+            }
+            document.getElementById('importInfo').textContent = "Number of rows imported: " + importedRows;
+        };
+        fr.readAsText(this.files[0]);
+    });
+</script>
+<!-- Geocoding script -->
+<script>
+    function geocode() {
+        var dataTable = document.getElementById('dataTable');
+        var finalTable = document.createElement('table'); // New table
+        finalTable.classList.add('table'); // Style class
+        // new table columns
+        var headerRow = finalTable.insertRow();
+        var addressHeader = headerRow.insertCell(0);
+        addressHeader.textContent = 'Address';
+        var jobIDHeader = headerRow.insertCell(1);
+        jobIDHeader.textContent = 'JobID';
+        var lonHeader = headerRow.insertCell(2);
+        lonHeader.textContent = 'Longitude';
+        var latHeader = headerRow.insertCell(3);
+        latHeader.textContent = 'Latitude';
+        var errorHeader = headerRow.insertCell(4);
+        errorHeader.textContent = 'ERROR';
+        var probHeader = headerRow.insertCell(5);
+        probHeader.textContent = 'Probability 0-30';
+        var interval = 1555; // Interval in ms of geocoding
+        var index = 1;
+        var maxIndex = dataTable.rows.length;
+        var geocodeInterval = setInterval(function() {
+            if (index >= maxIndex) {
+                clearInterval(geocodeInterval);
+                generateFinalTable(finalTable); //when all points are geocoded, interval stops and Final Table is generated
+                return;
+            }
+            var address = dataTable.rows[index].cells[1].textContent; // Address from DataTable
+            var jobID = dataTable.rows[index].cells[2].textContent; // JobID from DataTable
+
+            fetch('https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(address))
+                .then(response => response.json())
+                .then(data => {
+                    if (data && data.length > 0) {
+                        var lat = data[0].lat; //latitude info
+                        var lon = data[0].lon; //longitude info
+                        var place_rank = data[0].place_rank; //probability ranking
+                        var marker = L.marker([lat, lon]).addTo(map); //placing marker
+                        marker.bindPopup("<b>Job ID:</b> " + jobID + "<br><b>Address:</b> " + address + "<br><b>Longitude:</b> " + lon + "<br><b>Latitude:</b> " + lat).openPopup();
+                        // adding new row to table
+                        var row = finalTable.insertRow();
+                        row.insertCell(0).textContent = address;
+                        row.insertCell(1).textContent = jobID;
+                        row.insertCell(2).textContent = lon;
+                        row.insertCell(3).textContent = lat;
+                        row.insertCell(4).textContent = 'OK';
+                        row.insertCell(5).textContent = place_rank;
+                    } else {
+                        // new row of valid point to table
+                        var row = finalTable.insertRow();
+                        row.insertCell(0).textContent = address;
+                        row.insertCell(1).textContent = jobID;
+                        row.insertCell(2).textContent = '';
+                        row.insertCell(3).textContent = '';
+                        row.insertCell(4).textContent = 'Location not found';
+                        row.insertCell(5).textContent = '0' ;
+                    }
+                })
+                .catch(error => {
+                    console.error('ERROR:', error);
+                });
+            index++;
+        }, interval);
+    }
+    function generateFinalTable(finalTable) {
+        var finalTableContainer = document.getElementById('finalTableContainer');
+        finalTableContainer.innerHTML = '';
+        finalTableContainer.appendChild(finalTable);
+    }
+</script>
+<!-- Download script -->
+<script>
+    function downloadData() {
+        var finalTableContainer = document.getElementById('finalTableContainer');
+        var finalTable = finalTableContainer.querySelector('table');
+        var rows = [];
+        for (var i = 1; i < finalTable.rows.length; i++) { // avoid first row (columns names)
+            var cells = finalTable.rows[i].cells;
+            var row = [];
+            for (var j = 0; j < cells.length; j++) {
+                row.push(cells[j].textContent);
+            }
+            rows.push(row.join('\t')); // Separate columns with tabulator
+        }
+        var content = rows.join('\n'); // Separate rows with newline
+        var blob = new Blob([content], {type: 'text/plain'});
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'data.txt';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+</script>
+</body>
+</html>

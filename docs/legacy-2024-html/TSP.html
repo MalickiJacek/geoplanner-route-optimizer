@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-search/dist/leaflet-search.min.css" />
+    <script src="https://unpkg.com/leaflet-search/dist/leaflet-search.min.js"></script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"
+          integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <title>TSP</title>
+    <link rel="stylesheet" href="style/style.css">
+</head>
+<body>
+<nav class="navbar navbar-dark bg-dark">
+    <a class="navbar-brand" href="JMPage.html">
+        <img src="zdje.png" width="30" height="30" class="d-inline-block align-top" alt="">
+        253484 JM page
+    </a>
+    <form class="form-inline">
+        <a class="navbar-brand" href="Geocode.html">Geocode</a>
+        <a class="navbar-brand" href="TSP.html">TSP</a>
+        <a class="navbar-brand" href="VRP.html">VRP</a>
+    </form>
+</nav>
+<!-- first section -->
+<div class="bg-success p-2 text-white"><h1>This page is meant to solve Travelling Salesman Problem</h1></div>
+<p>Here you import tables with four columns: first one contains adresses while second has unique ID of each point. Remaining two columns have longitude and latitude. First table is for starting point such as e.g. Company, whereas second one stores orders.</p>
+<input type="file" id="fileInput" accept=".txt" style="display: none;">
+<input type="file" id="fileInput1" accept=".txt" style="display: none;">
+<!-- Starting Point Table and upload button -->
+<button type="button" class="btn btn-primary" onclick="document.getElementById('fileInput1').click()">Import Starting Point File
+</button>
+<div class="scrollable-table">
+    <table class="table" border="1" id="dataTable1">
+        <tr>
+            <th></th>
+            <th>Company</th>
+            <th>ID</th>
+            <th>Longitude</th>
+            <th>Latitude</th>
+        </tr>
+    </table>
+</div>
+<!-- Points Table and upload button -->
+<button type="button" class="btn btn-primary" onclick="document.getElementById('fileInput').click()">Import Points File
+</button>
+<div class="scrollable-table" id="dataTableContainer"> <!-- Dodaje kontener dla przewijanej tabeli -->
+    <table class="table" border="1" id="dataTable">
+        <tr>
+            <th></th>
+            <th>Address</th>
+            <th>JobID</th>
+            <th>Longitude</th>
+            <th>Latitude</th>
+        </tr>
+    </table>
+</div>
+<p id="importInfo" class="darkgreen"></p> <!-- Paragraph to display import information -->
+<!-- button for solving TSP and giving additional column of sequences -->
+<button type="button" class="btn btn-primary" onclick="solveTSP()">Solve</button>
+<!-- resultTable -->
+<div class="scrollable-table" id="resultTableContainer">
+    <table class="table" border="1" id="resultTable">
+        <tr>
+            <th>Company/Address</th>
+            <th>ID/JobID</th>
+            <th>Longitude</th>
+            <th>Latitude</th>
+            <th>Sequence</th>
+        </tr>
+    </table>
+</div>
+<!-- Visualize button -->
+<button type="button" class="btn btn-primary" onclick="visualizeRoute()">Visualize</button>
+<div id="map" style="height: 500px;"></div>
+<!-- bootstrap script -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+        crossorigin="anonymous"></script>
+<!-- uploading scripts -->
+<script>
+    document.getElementById('fileInput').addEventListener('change', function() {
+        var fr = new FileReader();
+        fr.onload = function() {
+            var lines = fr.result.split('\n');
+            var dataTable = document.getElementById('dataTable');
+            var importedRows = 0;
+            for (var i = 0; i < lines.length; i++) {
+                var parts = lines[i].trim().split('\t');
+                if (parts.length >= 2) {
+                    var row1 = dataTable.insertRow();
+                    row1.insertCell(0).textContent = i + 1;
+                    row1.insertCell(1).textContent = parts[0];
+                    row1.insertCell(2).textContent = parts[1];
+                    row1.insertCell(3).textContent = parts[2];
+                    row1.insertCell(4).textContent = parts[3];
+                    importedRows++;
+                }
+            }
+            document.getElementById('importInfo').textContent = "Number of rows imported: " + importedRows;
+        };
+        fr.readAsText(this.files[0]);
+    });
+    document.getElementById('fileInput1').addEventListener('change', function() {
+        var fr = new FileReader();
+        fr.onload = function() {
+            var lines = fr.result.split('\n');
+            var dataTable1 = document.getElementById('dataTable1');
+            var importedRows = 0;
+            for (var i = 0; i < lines.length; i++) {
+                var parts = lines[i].trim().split('\t');
+                if (parts.length >= 2) {
+                    var row1 = dataTable1.insertRow();
+                    row1.insertCell(0).textContent = i + 1;
+                    row1.insertCell(1).textContent = parts[0];
+                    row1.insertCell(2).textContent = parts[1];
+                    row1.insertCell(3).textContent = parts[2];
+                    row1.insertCell(4).textContent = parts[3];
+                    importedRows++;
+                }
+            }
+            document.getElementById('importInfo').textContent = "Number of rows imported: " + importedRows;
+        };
+        fr.readAsText(this.files[0]);
+    });
+</script>
+<!-- TSP solution script -->
+<script>
+    function solveTSP() {
+        // Starting point
+        const startPointRow = document.getElementById('dataTable1').rows[1];
+        const startPoint = {
+            x: parseFloat(startPointRow.cells[3].textContent),
+            y: parseFloat(startPointRow.cells[4].textContent),
+            company: startPointRow.cells[1].textContent,
+            id: startPointRow.cells[2].textContent
+        };
+        // Points to visit
+        const pointsToVisit = [];
+        const dataTable = document.getElementById('dataTable');
+        for (let i = 1; i < dataTable.rows.length; i++) {
+            const row = dataTable.rows[i];
+            const point = {
+                x: parseFloat(row.cells[3].textContent),
+                y: parseFloat(row.cells[4].textContent),
+                company: row.cells[1].textContent,
+                id: row.cells[2].textContent
+            };
+            pointsToVisit.push(point);
+        }
+        // Function solving TSP
+        const result = travellingSalesman(startPoint, pointsToVisit);
+        // Creating result table
+        const resultTable = document.getElementById('resultTable');
+        resultTable.innerHTML = "";
+        // Adding headers
+        const headerRow = resultTable.insertRow();
+        headerRow.innerHTML = "<th>Company/Address</th><th>ID/JobID</th><th>Longitude</th><th>Latitude</th><th>Sequence</th>";
+        // Addind data
+        let sequence = 1;
+        for (const point of result.path) {
+            const row = resultTable.insertRow();
+            row.innerHTML = `<td>${point.company || point.address}</td><td>${point.id || point.jobID}</td><td>${point.x}</td><td>${point.y}</td><td>${sequence}</td>`;
+            sequence++;
+        }
+    }
+</script>
+<script>
+    // geometric length between points
+    function calculateDistance(point1, point2) {
+        const dx = point1.x - point2.x;
+        const dy = point1.y - point2.y;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+    // Function finding the shortest route of the traveling salesman using the brute force method
+    function travellingSalesman(startPoint, points) {
+        const n = points.length;
+        let minPath = [];
+        let minDistance = Infinity;
+        // Helper function for generating all possible permutations
+        function permute(arr, start) {
+            if (start === arr.length - 1) {
+                let distance = 0;
+                for (let i = 0; i < arr.length - 1; i++) {
+                    distance += calculateDistance(arr[i], arr[i + 1]);
+                }
+                distance += calculateDistance(arr[arr.length - 1], startPoint); // Adding the return to the starting point
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    minPath = arr.slice(); // Saving best path
+                }
+            } else {
+                for (let i = start; i < arr.length; i++) {
+                    [arr[start], arr[i]] = [arr[i], arr[start]]; // changing places
+                    permute(arr, start + 1);
+                    [arr[start], arr[i]] = [arr[i], arr[start]]; // back to original sequence
+                }
+            }
+        }
+        // Starting permutation generation
+        permute(points, 0);
+        return { path: [startPoint, ...minPath, startPoint], distance: minDistance };
+    }
+</script>
+<!-- Visualizing scripts -->
+<script>
+    function visualizeRoute() {
+        const resultTable = document.getElementById('resultTable');
+        const map = L.map('map').setView([55.85, -3.79], 9); // map view
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        const polylinePoints = [];
+        const markers = [];
+        const rows = resultTable.rows;
+        for (let i = 1; i < rows.length; i++) {
+            const row = rows[i];
+            const lat = parseFloat(row.cells[3].textContent);
+            const lng = parseFloat(row.cells[2].textContent);
+            const id = row.cells[1].textContent || row.cells[1].textContent;
+            const companyAddress = row.cells[0].textContent;
+            const popupContent = `<b>${companyAddress}</b><br>ID/JobID: ${id}`;
+            polylinePoints.push([lat, lng]);
+            const marker = L.marker([lat, lng]).addTo(map);
+            marker.bindPopup(popupContent).openPopup();
+            markers.push(marker);
+            // Adding numbers to lines
+            if (i < rows.length - 1) {
+                const nextLat = parseFloat(rows[i + 1].cells[3].textContent);
+                const nextLng = parseFloat(rows[i + 1].cells[2].textContent);
+                const sequence = i;
+                L.polyline([[lat, lng], [nextLat, nextLng]], {color: 'red'}).addTo(map).bindPopup('Sequence: ' + sequence);
+            }
+        }
+
+        L.polyline(polylinePoints, {color: 'red'}).addTo(map);
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+# GeoPlanner - local development stack
+# 1. cp .env.example .env   (and change the passwords / SECRET_KEY)
+# 2. docker compose up --build
+# 3. docker compose exec backend python manage.py seed_db   (optional demo data)
+
+services:
+
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # No host port: the backend reaches the database inside the compose network,
+    # so a local PostgreSQL already using 5432 does not conflict.
+    # Need psql / DBeaver from the host? uncomment and use port 5433:
+    # ports:
+    #   - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    volumes:
+      - ./backend:/app          # live reload: local code = code in the container
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./.env
+    environment:
+      DB_HOST: db               # inside the compose network the database is "db"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    command: npm run dev -- --host
+    volumes:
+      - ./frontend:/app         # Vite HMR works as usual
+      - /app/node_modules       # node_modules come from the image, not from the host
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
